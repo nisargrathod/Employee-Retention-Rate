@@ -49,7 +49,7 @@ def run():
 
     df = load_data("HR_comma_sep.csv")
 
-    model = load_the_model("nisarg_employee_retention_v1.pkl")
+    model = load_the_model("nisarg_employee_retention_v1.pkl", "wb")
 
     if model is None:
         return
