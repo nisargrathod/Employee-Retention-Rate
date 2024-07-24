@@ -1,4 +1,3 @@
-# Importing ToolKits
 import re
 import vizualizations
 import prediction
@@ -10,16 +9,14 @@ import plotly.express as px
 
 from sklearn.metrics import mean_squared_error, accuracy_score, confusion_matrix
 
-
 import streamlit as st
 from streamlit.components.v1 import html
 from streamlit_option_menu import option_menu
 import warnings
 
-
 def run():
     st.set_page_config(
-        page_title="Employee Retetion",
+        page_title="Employee Retention",
         page_icon="📊",
         layout="wide"
     )
@@ -30,12 +27,12 @@ def run():
     @st.cache_data
     def load_data(the_file_path):
         df = pd.read_csv(the_file_path)
-        df.columns = df.columns.str.replace(" ",  "_").str.replace(".", "")
+        df.columns = df.columns.str.replace(" ", "_").str.replace(".", "")
 
         # Drop Duplicates Records
         df.drop_duplicates(inplace=True)
 
-        # Reset Our Index to be Orderd
+        # Reset Our Index to be Ordered
         df.reset_index(inplace=True, drop=True)
 
         return df
@@ -43,13 +40,21 @@ def run():
     # Function To Load Our Dataset
     @st.cache_data
     def load_the_model(model_path):
-        return pd.read_pickle(model_path)
-        
+        try:
+            model = pd.read_pickle(model_path)
+            return model
+        except Exception as e:
+            st.error(f"Error loading the model: {e}")
+            return None
+
     df = load_data("HR_comma_sep.csv")
 
     model = load_the_model("nisarg_employee_retention_v1.pkl")
 
-    # Function To Valid Input Data
+    if model is None:
+        return
+
+    # Function To Validate Input Data
     @st.cache_data
     def is_valid_data(d):
         letters = list("qwertyuiopasdfghjklzxcvbnm@!#$%^&*-+~")
@@ -150,7 +155,6 @@ time_spend_company
             border: 2px solid #17B794;
             color: #fff
         }
-
 
     </style>
     """,
@@ -273,157 +277,40 @@ time_spend_company
                                 'Average Monthly Hours', min_value=50, max_value=320, step=1, value=120)
 
                             time_in_company = st.number_input(
-                                'Time In Company', min_value=1, max_value=20, step=1, value=5)
+                                'Time In Company', min_value=1, max_value=20, step=1, value=3)
 
-                        salary_category = st.selectbox(
-                            "Salary", options=["low", "medium", "high"])
+                        submitted = st.form_submit_button("Predict")
 
-                        st.write("")  # Space
-
-                        predict_button = st.form_submit_button(
-                            label='Predict', use_container_width=True)
-                        st.write("***")  # Space
-
-                        if predict_button:
-                            salary = [0, 0]  # High Salary
-                            if salary_category == "low":
-                                salary = [1, 0]
-                            elif salary_category == "medium":
-                                salary = [0, 1]
-
-                            with st.spinner(text='Predict The Value..'):
-                                new_data = [
-                                    satisfaction_level, last_evaluation, avg_monthly_hours, time_in_company]
-
-                                new_data.extend(salary)
-                                predicted_value = model.predict([new_data])[0]
-                                sleep(1.2)
-                                prediction_prop = np.round(
-                                    model.predict_proba([new_data])*100)
-
-                                predicted_col, leave_prop, stay_prop = st.columns(
-                                    3)
-
-                                with predicted_col:
-                                    if predicted_value == 0:
-                                        st.image("imgs/manager.png",
-                                                 caption="", width=70)
-                                        st.subheader(
-                                            "Employee Expected To")
-                                        st.subheader(":green[STAY]")
-
-                                    else:
-                                        st.image("imgs/turnover.png",
-                                                 caption="", width=70)
-                                        st.subheader(
-                                            f"Employee Expected To")
-                                        st.subheader(":red[LEAVE]")
-
-                                with leave_prop:
-                                    st.image("imgs/discount.png",
-                                             caption="", width=70)
-                                    st.subheader("Probability To Stay")
-                                    st.subheader(f"{prediction_prop[0, 0]}%")
-
-                                with stay_prop:
-                                    st.image("imgs/discount.png",
-                                             caption="", width=70)
-                                    st.subheader("Probability To Leave")
-                                    st.subheader(f"{prediction_prop[0, 1]}%")
+                        if submitted:
+                            single_pred = model.predict(
+                                [[satisfaction_level, last_evaluation, avg_monthly_hours, time_in_company]])[0]
+                            single_pred = "Employee Will Stay" if single_pred == 0 else "Employee Will Leave"
+                            st.write("***")
+                            st.write(
+                                f"The Model Prediction Is: **{single_pred}**")
 
                 if prediction_option == "From File":
-                    st.info("Please upload your file with the following columns' names in the same order\n\
-                            ['satisfaction_level', 'last_evaluation', 'average_montly_hours', 'time_spend_company', 'salary']", icon="ℹ️")
 
                     test_file = st.file_uploader(
-                        "Upload Your Test File 📂", type="csv")
+                        "Upload Your Testing File 📂", type="csv")
 
                     if test_file is not None:
-                        extention = test_file.name.split(".")[-1]
-                        if extention.lower() != "csv":
-                            st.error("Please, Upload CSV FILE ONLY")
+                        test_file = pd.read_csv(test_file)
+                        test_file_columns = test_file.columns
 
+                        # Validate File Columns
+                        if validate_test_file(test_file_columns):
+                            prediction_data = test_file.copy()
+                            y_pred = model.predict(prediction_data)
+                            y_pred = pd.Series(y_pred).map(
+                                {0: "Employee Will Stay", 1: "Employee Will Leave"})
+                            test_file["Prediction Result"] = y_pred
+                            st.write("***")
+                            st.write("The Model Predictions")
+                            st.dataframe(test_file, use_container_width=True)
                         else:
-                            X_test = pd.read_csv(test_file)
-                            X_test.dropna(inplace=True)
+                            st.error(
+                                "The Provided File Is Invalid, Please Check The File Columns")
 
-                            if not validate_test_file(X_test.columns.to_list()):
-                                X_test = X_test[['satisfaction_level', 'last_evaluation',
-                                                 'average_montly_hours', 'time_spend_company', 'salary']]
-
-                            X_encodded = pd.get_dummies(
-                                X_test, columns=['salary'], drop_first=True) * 1
-
-                            all_predicted_values = model.predict(X_encodded)
-
-                            final_complete_file = pd.concat([X_test, pd.DataFrame(all_predicted_values,
-                                                                                  columns=["Left"])], axis=1)
-
-                            final_complete_file["Left"] = final_complete_file["Left"].map(
-                                {0: "Stay", 1: "Left"})
-
-                            st.write("")
-
-                            st.dataframe(final_complete_file.head(200),
-                                         use_container_width=True)
-                    else:
-                        st.warning(
-                            "Please, Upload The CSV Test File", icon="⚠️")
-
-                    with st.form("comaprison_form"):
-
-                        if st.form_submit_button("Compare Predicted With Actual Values"):
-                            st.info(
-                                "Be Sure Your Actual Values File HAS ONLY One Column", icon="ℹ️")
-
-                            actual_file = st.file_uploader(
-                                "Upload Your Actual Data File 📂", type="csv")
-
-                            if actual_file is not None and test_file is not None:
-                                if actual_file.name.split(".")[-1].lower() != "csv":
-                                    st.error("Please, Upload CSV FILE ONLY")
-
-                                else:
-                                    y_test = pd.read_csv(actual_file)
-
-                                if y_test.shape[1] == 1:
-                                    with st.spinner("Comparing Results...."):
-                                        sleep(2)
-
-                                        col1, col2 = st.columns(2)
-
-                                        with col1:
-                                            test_score = np.round(
-                                                accuracy_score(y_test, all_predicted_values) * 100, 2)
-                                            prediction.creat_matrix_score_cards("imgs/accuracy.png",
-                                                                                "Prediction Accuracy",
-                                                                                test_score,
-                                                                                True
-                                                                                )
-
-                                        with col2:
-
-                                            mse = mean_squared_error(
-                                                y_test, all_predicted_values)
-                                            prediction.creat_matrix_score_cards("imgs/sort.png",
-                                                                                "Error Ratio",
-                                                                                np.round(
-                                                                                    np.sqrt(mse), 2),
-                                                                                False)
-
-                                        cm = confusion_matrix(
-                                            y_test, all_predicted_values)
-
-                                        st.plotly_chart(prediction.create_confusion_plot(cm),
-                                                        use_container_width=True)
-
-                                else:
-                                    st.warning(
-                                        "Please, Check That Your Test File Has The One Column.", icon="⚠️")
-
-                            else:
-                                st.warning(
-                                    "Please, Check That You Upload The Test File & Actual Value", icon="⚠️")
-
-
-run()
+if __name__ == "__main__":
+    run()
